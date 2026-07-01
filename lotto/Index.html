@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>Lucky Lotto</title>
+
+  <!-- 모바일 웹앱 설정 -->
+ <meta name="theme-color" content="#7C3AED">
+ <meta name="mobile-web-app-capable" content="yes">
+ <meta name="apple-mobile-web-app-capable" content="yes">
+ <meta name="apple-mobile-web-app-title" content="Lucky Lotto">
+ <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+ <!-- 파비콘 / 앱 아이콘 -->
+ <link rel="icon" href="logo.png">
+ <link rel="apple-touch-icon" href="logo.png">
+  <!-- Bold sans-serif fonts: Archivo Black for headings, Space Grotesk for body/numbers -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================================
+       Design tokens - change these values to restyle the whole app
+    ============================================================ */
+    :root {
+      --bg: #F3F2EC;         /* off-white background */
+      --panel: #FFFFFF;      /* inner board panel */
+      --ink: #121212;        /* bold black border/text color */
+      --yellow: #FFD400;     /* 1-10 */
+      --blue: #2266FF;       /* 11-20 */
+      --red: #FF3B30;        /* 21-30 */
+      --gray: #9AA0A6;       /* 31-40 */
+      --green: #00C853;      /* 41-45 */
+      --accent: #FF3EA5;     /* accent button color (pink) */
+      --accent-dark: #121212;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      font-family: 'Space Grotesk', sans-serif;
+      color: var(--ink);
+      display: flex;
+      justify-content: center; /* center everything horizontally */
+    }
+
+    #app {
+      width: 100%;
+      max-width: 720px;
+      padding: 28px 18px 60px;
+    }
+
+    /* ----------------- header : slightly asymmetric ----------------- */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 22px;
+      transform: rotate(-1deg); /* small tilt for a livelier feel */
+    }
+
+    .title {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: clamp(28px, 7vw, 44px);
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+    .title span { color: var(--accent); }
+
+    .subtitle {
+      border: 3px solid var(--ink);
+      background: var(--yellow);
+      padding: 6px 10px;
+      font-weight: 700;
+      font-size: 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+      margin-top: 6px;
+    }
+
+    /* ----------------- draw board ----------------- */
+    .board {
+      position: relative;
+      background: var(--panel);
+      border: 4px solid var(--ink);
+      border-radius: 20px;
+      height: 240px;
+      overflow: hidden;
+      box-shadow: 8px 8px 0 var(--ink); /* raised, boxy shadow */
+      margin-bottom: 18px;
+    }
+
+    /* faint grid guide lines */
+    .board::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(90deg, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent calc(100%/6));
+      pointer-events: none;
+    }
+
+    .board-label {
+      position: absolute;
+      top: 10px;
+      left: 14px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0.45;
+      z-index: 5;
+    }
+
+    /* before drawing: decorative floating balls */
+    #floatingContainer {
+      position: absolute;
+      inset: 0;
+      transition: opacity 0.5s ease;
+    }
+    #floatingContainer.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .floating-ball {
+      position: absolute;
+      top: 0; left: 0;
+      border-radius: 50%;
+      border: 2.5px solid var(--ink);
+      transition: transform 0.05s linear, width 0.15s ease, height 0.15s ease;
+      will-change: transform;
+    }
+
+    /* after drawing: 6 equal-width slots laid out with flexbox (no manual pixel math) */
+    #resultContainer {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+    }
+    .result-slot {
+      flex: 1 1 0;           /* 항상 보드 폭을 정확히 6등분 */
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: visible;
+    }
+    .result-ball {
+      width: clamp(34px, 80%, 60px);  /* 슬롯보다 절대 커지지 않음 -> 잘릴 수 없음 */
+      aspect-ratio: 1 / 1;
+      border-radius: 50%;
+      border: 3px solid var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Archivo Black', sans-serif;
+      font-size: clamp(13px, 6vw, 20px);
+      color: var(--ink); /* always dark text for readability */
+      box-shadow: 3px 3px 0 rgba(0,0,0,0.15);
+      transform: translateY(-160px); /* 시작 위치 : 보드 위쪽 바깥 */
+      transition: transform 0.55s cubic-bezier(.34,1.56,.64,1);
+    }
+    /* impact effect the instant a ball lands in its slot */
+    .result-ball.landed {
+      animation: impact 0.3s ease;
+    }
+    @keyframes impact {
+      0%   { border-color: var(--accent); transform: translateY(0) scale(1.15); }
+      60%  { transform: translateY(0) scale(0.95); }
+      100% { border-color: var(--ink); transform: translateY(0) scale(1); }
+    }
+
+    /* ----------------- buttons ----------------- */
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    button {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 14px 26px;
+      border: 3px solid var(--ink);
+      border-radius: 999px; /* pill shape */
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      box-shadow: 4px 4px 0 var(--ink);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease, color 0.15s ease;
+    }
+    button:hover:not(:disabled) {
+      transform: translate(-2px, -2px);
+      box-shadow: 6px 6px 0 var(--ink);
+    }
+    button:active:not(:disabled) {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--ink);
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #drawBtn {
+      background: var(--accent);
+      color: var(--ink);
+    }
+    #drawBtn.ready {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* ----------------- saved list modal ----------------- */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+    .modal.hidden { display: none; }
+
+    .modal-content {
+      background: var(--panel);
+      border: 4px solid var(--ink);
+      border-radius: 18px;
+      box-shadow: 8px 8px 0 var(--ink);
+      width: 92%;
+      max-width: 420px;
+      max-height: 78vh;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .modal-content h2 {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 20px;
+      margin: 0 0 14px;
+    }
+
+    .saved-item {
+      border: 2.5px solid var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .saved-item .balls-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .mini-ball {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      color: var(--ink);
+      flex-shrink: 0;
+    }
+    .saved-meta { font-size: 10px; opacity: 0.55; margin-top: 4px; }
+    .delete-btn {
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: #fff;
+      padding: 6px 10px;
+      font-size: 12px;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+    .empty-msg { font-size: 13px; opacity: 0.6; padding: 10px 0; }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      opacity: 0.4;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+
+    <!-- title area -->
+    <header>
+      <div class="title">LUCKY<br><span>LOTTO</span></div>
+      <div class="subtitle">1 ~ 45 · 6 NUMBERS</div>
+    </header>
+
+    <!-- draw board -->
+    <div class="board" id="board">
+      <div class="board-label">DRAW BOARD</div>
+      <div id="floatingContainer"></div>
+      <div id="resultContainer"></div>
+    </div>
+
+    <!-- buttons -->
+    <div class="controls">
+      <button id="drawBtn">Draw Numbers →</button>
+      <button id="saveBtn" disabled>Save Numbers</button>
+      <button id="listBtn">View Saved List</button>
+    </div>
+
+    <footer>Lotto Generator by inyeong</footer>
+  </div>
+
+  <!-- saved list modal -->
+  <div class="modal hidden" id="savedModal">
+    <div class="modal-content">
+      <h2>Saved Numbers</h2>
+      <div id="savedList"></div>
+      <button id="closeModal" style="width:100%;">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // Global state
+    // ============================================================
+    var currentNumbers = null;      // the 6 numbers currently shown on screen
+    var floatingBalls = [];         // decorative balls before drawing: {el, x, y, vx, vy, r}
+    var animationId = null;         // requestAnimationFrame id (needed to stop the loop)
+    var decoPalette = ['#FFD400', '#2266FF', '#FF3B30', '#00C853', '#FF3EA5', '#FF8A00'];
+
+    var board = document.getElementById('board');
+    var floatingContainer = document.getElementById('floatingContainer');
+    var resultContainer = document.getElementById('resultContainer');
+    var drawBtn = document.getElementById('drawBtn');
+    var saveBtn = document.getElementById('saveBtn');
+    var listBtn = document.getElementById('listBtn');
+    var savedModal = document.getElementById('savedModal');
+    var savedListEl = document.getElementById('savedList');
+    var closeModalBtn = document.getElementById('closeModal');
+
+    // ============================================================
+    // 1. Pick a ball color based on the number's range
+    // ============================================================
+    function getBallColor(num) {
+      if (num <= 10) return getComputedStyle(document.documentElement).getPropertyValue('--yellow');
+      if (num <= 20) return getComputedStyle(document.documentElement).getPropertyValue('--blue');
+      if (num <= 30) return getComputedStyle(document.documentElement).getPropertyValue('--red');
+      if (num <= 40) return getComputedStyle(document.documentElement).getPropertyValue('--gray');
+      return getComputedStyle(document.documentElement).getPropertyValue('--green');
+    }
+
+    // ============================================================
+    // 2. Draw 6 unique numbers from 1-45 and sort them ascending
+    // ============================================================
+    function drawNumbers() {
+      var numberList = [];
+      while (numberList.length < 6) {
+        var randomValue = Math.floor(Math.random() * 45) + 1; // random integer 1-45
+        if (numberList.indexOf(randomValue) === -1) {
+          numberList.push(randomValue);
+        }
+      }
+      numberList.sort(function (a, b) { return a - b; }); // ascending sort
+      return numberList;
+    }
+
+    // ============================================================
+    // 3. Before drawing: create decorative floating balls + animate them
+    // ============================================================
+    function initFloatingBalls() {
+      var boardSize = board.getBoundingClientRect();
+      for (var i = 0; i < 14; i++) {
+        var radius = 16 + Math.random() * 12;
+        var ballInfo = {
+          x: Math.random() * (boardSize.width - radius * 2) + radius,
+          y: Math.random() * (boardSize.height - radius * 2) + radius,
+          vx: (Math.random() - 0.5) * 1.0,
+          vy: (Math.random() - 0.5) * 1.0,
+          r: radius
+        };
+        var ballElement = document.createElement('div');
+        ballElement.className = 'floating-ball';
+        ballElement.style.width = (radius * 2) + 'px';
+        ballElement.style.height = (radius * 2) + 'px';
+        ballElement.style.background = decoPalette[Math.floor(Math.random() * decoPalette.length)];
+        floatingContainer.appendChild(ballElement);
+        ballInfo.el = ballElement;
+        floatingBalls.push(ballInfo);
+      }
+      animationId = requestAnimationFrame(animateFloatingBalls);
+    }
+
+    // Update ball positions every frame, bouncing off the board edges
+    function animateFloatingBalls() {
+      var boardSize = board.getBoundingClientRect();
+      floatingBalls.forEach(function (ball) {
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        if (ball.x - ball.r < 0 || ball.x + ball.r > boardSize.width) { ball.vx *= -1; }
+        if (ball.y - ball.r < 0 || ball.y + ball.r > boardSize.height) { ball.vy *= -1; }
+        ball.el.style.transform = 'translate(' + (ball.x - ball.r) + 'px,' + (ball.y - ball.r) + 'px)';
+      });
+      animationId = requestAnimationFrame(animateFloatingBalls);
+    }
+
+    // Gently push balls away when the mouse gets close (hover interaction)
+    board.addEventListener('mousemove', function (e) {
+      var boardPosition = board.getBoundingClientRect();
+      var mouseX = e.clientX - boardPosition.left;
+      var mouseY = e.clientY - boardPosition.top;
+      var reactDistance = 80;
+      var maxSpeed = 3.2;
+
+      floatingBalls.forEach(function (ball) {
+        var dx = ball.x - mouseX;
+        var dy = ball.y - mouseY;
+        var distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < reactDistance && distance > 0.01) {
+          var pushPower = (reactDistance - distance) / reactDistance;
+          ball.vx += (dx / distance) * pushPower * 0.9;
+          ball.vy += (dy / distance) * pushPower * 0.9;
+          // clamp speed so it doesn't get too fast
+          ball.vx = Math.max(-maxSpeed, Math.min(maxSpeed, ball.vx));
+          ball.vy = Math.max(-maxSpeed, Math.min(maxSpeed, ball.vy));
+        }
+      });
+    });
+
+    // ============================================================
+    // 4. Handle the "Draw Numbers" / "Redraw" button click
+    // ============================================================
+    function handleDrawClick() {
+      drawBtn.disabled = true;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Save Numbers';
+
+      // 4-1) If decorative floating balls are still on screen, fade them out (first draw only)
+      if (floatingBalls.length > 0) {
+        cancelAnimationFrame(animationId);
+        floatingContainer.classList.add('fade-out');
+        setTimeout(function () {
+          floatingContainer.innerHTML = '';
+          floatingBalls = [];
+        }, 500);
+      }
+
+      // 4-2) If there's a previous result, fade it out before clearing
+      var previousBalls = resultContainer.querySelectorAll('.result-ball');
+      previousBalls.forEach(function (ball) {
+        ball.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+        ball.style.opacity = '0';
+        ball.style.transform = 'translateY(0) scale(0.6)'; // 이미 착지한 상태(translateY(0))에서 축소
+      });
+
+      setTimeout(function () {
+        resultContainer.innerHTML = '';
+        dropResultBalls();
+      }, previousBalls.length > 0 ? 260 : 0);
+    }
+
+    // Draw the numbers, then animate them falling like gravity into aligned slots
+    function dropResultBalls() {
+      var numberList = drawNumbers();
+      currentNumbers = numberList;
+
+      numberList.forEach(function (num, index) {
+        // 슬롯(칸) 하나를 만들고, 그 안에 공을 넣음 -> 가로 위치는 flexbox가 알아서 6등분
+        var slot = document.createElement('div');
+        slot.className = 'result-slot';
+
+        var ball = document.createElement('div');
+        ball.className = 'result-ball';
+        ball.style.background = getBallColor(num);
+        ball.textContent = num;
+        // 시작 위치(위쪽 바깥)는 CSS의 transform: translateY(-160px) 기본값을 그대로 사용
+
+        slot.appendChild(ball);
+        resultContainer.appendChild(slot);
+
+        // impact effect + sound the instant it lands
+        ball.addEventListener('transitionend', function onEnd() {
+          ball.removeEventListener('transitionend', onEnd);
+          ball.classList.add('landed');
+          playLandingSound();
+          setTimeout(function () { ball.classList.remove('landed'); }, 300);
+        });
+
+        // drop each ball with a staggered delay (gravity motion) - 세로 방향으로만 이동
+        setTimeout(function () {
+          ball.style.transform = 'translateY(0)';
+        }, index * 160);
+      });
+
+      // once every ball has landed, reset the button states
+      var totalTime = numberList.length * 160 + 700;
+      setTimeout(function () {
+        drawBtn.disabled = false;
+        drawBtn.textContent = 'Redraw ↻';
+        drawBtn.classList.add('ready');
+        saveBtn.disabled = false;
+      }, totalTime);
+    }
+
+    // short "tok" beep played when a ball lands in its slot
+    function playLandingSound() {
+      try {
+        if (!window.__audioCtx) {
+          window.__audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        var ctx = window.__audioCtx;
+        var oscillator = ctx.createOscillator();
+        var volume = ctx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 620;
+        volume.gain.setValueAtTime(0.16, ctx.currentTime);
+        volume.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        oscillator.connect(volume).connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.15);
+      } catch (err) {
+        // ignore if the environment doesn't support audio
+      }
+    }
+
+    // ============================================================
+    // 5. Save the current numbers (calls Code.gs on the server)
+    // ============================================================
+    function handleSaveClick() {
+      if (!currentNumbers) return;
+      saveBtn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function () {
+          saveBtn.textContent = 'Saved ✓';
+          setTimeout(function () {
+            saveBtn.textContent = 'Save Numbers';
+            saveBtn.disabled = false;
+          }, 1200);
+        })
+        .withFailureHandler(function (err) {
+          alert('Save failed: ' + err.message);
+          saveBtn.disabled = false;
+        })
+        .saveNumbers(currentNumbers);
+    }
+
+    // ============================================================
+    // 6. View / delete saved numbers
+    // ============================================================
+    function handleListClick() {
+      savedModal.classList.remove('hidden');
+      savedListEl.innerHTML = '<div class="empty-msg">Loading...</div>';
+      google.script.run
+        .withSuccessHandler(renderSavedList)
+        .withFailureHandler(function (err) {
+          savedListEl.innerHTML = '<div class="empty-msg">Failed to load the list.</div>';
+        })
+        .getSavedNumbers();
+    }
+
+    function renderSavedList(list) {
+      savedListEl.innerHTML = '';
+
+      if (!list || list.length === 0) {
+        savedListEl.innerHTML = '<div class="empty-msg">No saved numbers yet.</div>';
+        return;
+      }
+
+      list.forEach(function (entry) {
+        var card = document.createElement('div');
+        card.className = 'saved-item';
+
+        var leftSide = document.createElement('div');
+        var ballsRow = document.createElement('div');
+        ballsRow.className = 'balls-row';
+        entry.numbers.forEach(function (num) {
+          var miniBall = document.createElement('div');
+          miniBall.className = 'mini-ball';
+          miniBall.style.background = getBallColor(num);
+          miniBall.textContent = num;
+          ballsRow.appendChild(miniBall);
+        });
+        var savedAtEl = document.createElement('div');
+        savedAtEl.className = 'saved-meta';
+        savedAtEl.textContent = entry.savedAt;
+
+        leftSide.appendChild(ballsRow);
+        leftSide.appendChild(savedAtEl);
+
+        var deleteButton = document.createElement('button');
+        deleteButton.className = 'delete-btn';
+        deleteButton.textContent = 'Delete';
+        deleteButton.onclick = function () { handleDeleteClick(entry.id); };
+
+        card.appendChild(leftSide);
+        card.appendChild(deleteButton);
+        savedListEl.appendChild(card);
+      });
+    }
+
+    function handleDeleteClick(id) {
+      google.script.run
+        .withSuccessHandler(renderSavedList)
+        .withFailureHandler(function (err) {
+          alert('Delete failed: ' + err.message);
+        })
+        .deleteSavedNumbers(id);
+    }
+
+    // ============================================================
+    // 7. Wire up events + set up the first screen
+    // ============================================================
+    drawBtn.addEventListener('click', handleDrawClick);
+    saveBtn.addEventListener('click', handleSaveClick);
+    listBtn.addEventListener('click', handleListClick);
+    closeModalBtn.addEventListener('click', function () {
+      savedModal.classList.add('hidden');
+    });
+    savedModal.addEventListener('click', function (e) {
+      if (e.target === savedModal) savedModal.classList.add('hidden'); // click outside to close
+    });
+
+    window.addEventListener('load', initFloatingBalls); // start the decorative balls as soon as the page loads
+  </script>
+</body>
+</html>
